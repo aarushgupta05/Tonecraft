@@ -190,6 +190,20 @@ class MusicToneClassifier:
             # Use get_text_features directly
             text_embed = self.clap_model.get_text_features(**dummy_text)
             
+            # --- ROBUSTNESS FIX ---
+            if not isinstance(text_embed, torch.Tensor):
+                if hasattr(text_embed, 'pooler_output') and text_embed.pooler_output is not None:
+                    text_embed = text_embed.pooler_output
+                elif hasattr(text_embed, 'text_embeds'):
+                    text_embed = text_embed.text_embeds
+                elif hasattr(text_embed, 'last_hidden_state'):
+                    text_embed = text_embed.last_hidden_state[:, 0, :]
+                
+                # Apply text projection if available
+                if hasattr(self.clap_model, 'text_projection') and self.clap_model.text_projection is not None:
+                    text_embed = self.clap_model.text_projection(text_embed)
+            # ----------------------
+            
             self.embed_dim = text_embed.shape[-1]
 
         print(f"[INFO] CLAP embedding dim = {self.embed_dim}")
@@ -424,6 +438,25 @@ class MusicToneClassifier:
         with torch.no_grad():
             # Use get_text_features directly which is the standard API
             text_embed = self.clap_model.get_text_features(**inputs)
+            
+            # --- ROBUSTNESS FIX ---
+            # Handle case where output is a ModelOutput object instead of Tensor
+            # This can happen in certain environments or transformers versions
+            if not isinstance(text_embed, torch.Tensor):
+                print(f"[DEBUG] text_embed is type {type(text_embed)}, extracting tensor...", flush=True)
+                if hasattr(text_embed, 'pooler_output') and text_embed.pooler_output is not None:
+                    text_embed = text_embed.pooler_output
+                elif hasattr(text_embed, 'image_embeds'): # In case of mixup
+                    text_embed = text_embed.image_embeds
+                elif hasattr(text_embed, 'text_embeds'):
+                    text_embed = text_embed.text_embeds
+                elif hasattr(text_embed, 'last_hidden_state'):
+                    text_embed = text_embed.last_hidden_state[:, 0, :]
+                
+                # Apply text projection if available (critical for matching audio space)
+                if hasattr(self.clap_model, 'text_projection') and self.clap_model.text_projection is not None:
+                    text_embed = self.clap_model.text_projection(text_embed)
+            # ----------------------
 
         return text_embed.cpu().numpy()
     
